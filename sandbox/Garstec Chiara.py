@@ -1,6 +1,6 @@
 import h5py
 
-file = r'C:\Users\kiena\Documents\YEAR 4\PROJECT\Garstec_AS09_chiara.hdf5'
+file = r'C:\Users\kiena\Documents\YEAR 4\PROJECT\Data\Garstec_AS09_chiara.hdf5'
 
 with h5py.File(file, 'r') as hdf:
     # List all groups in the file
