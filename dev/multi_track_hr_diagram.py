@@ -10,7 +10,7 @@ with h5py.File(garstec_data, 'r') as hdf:
 
     '''
     We want to make a HR diagram plot with a sample of mass (1.0 < M < 1.1) 
-    solar masses, and alpha_mlt initially set to 1.79.
+    solar masses, and alpha_mlt initially set to ~1.79.
     '''
 
     # Navigate through Grid -> tracks -> track00001
@@ -40,4 +40,22 @@ with h5py.File(garstec_data, 'r') as hdf:
             selected_tracks.append(track)
             
 
-    
+    # Now for the fun bit, plot the HR diagrams for each of the selected tracks
+
+    for track in selected_tracks:
+        # Access effective temperature and luminosity as np arrays
+        teff_data = track['Teff'][:] 
+        luminosity_data = track['LPhot'][:] 
+
+        track_name = track.name.rsplit('/', 1)[-1]  # Split from the right, keep the last part
+
+        # Plot effective temp against luminosity
+        plt.scatter(teff_data, luminosity_data, s=1, label=f'{track_name}')
+
+
+    plt.gca().invert_xaxis() #Invert x-axis to have proper form of HR diagram
+    plt.xlabel("Effective Temperature (K)")
+    plt.ylabel("Luminosity ($L_\odot$)")
+    plt.title("Effective Temperature vs. Luminosity")
+    plt.legend()
+    plt.show()
