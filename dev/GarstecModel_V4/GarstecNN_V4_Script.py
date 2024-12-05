@@ -25,7 +25,7 @@ print(device)
 num_cores = os.cpu_count()
 print("Number of cores: ",num_cores)
 
-garstec_data = r'C:\Users\kiena\Documents\YEAR 4\PROJECT\Data\Garstec_AS09_chiara.hdf5'
+garstec_data = r'/rds/projects/d/daviesgr-m4massloss/Garstec_AS09_chiara.hdf5'
 
 # 7 Inputs
 ages = []
