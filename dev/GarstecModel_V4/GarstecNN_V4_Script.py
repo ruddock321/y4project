@@ -1,8 +1,9 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import h5py
 import random
 import os
+import sys
+import time
 
 import torch
 import torch.nn as nn
@@ -13,7 +14,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_error
 
+start_time = time.time()
+max_runtime = 35000    # <10 hours in seconds
+
+print("Python version:", sys.version)
 print("PyTorch version:", torch.__version__)
+print("CUDA version:", torch.version.cuda)
 print("CUDA available:", torch.cuda.is_available())
 if torch.cuda.is_available():
     print("Device name:", torch.cuda.get_device_name(0))
@@ -25,7 +31,8 @@ print("Device: ",device)
 num_cores = os.cpu_count()
 print("Number of cores: ",num_cores)
 
-garstec_data = r'/rds/projects/d/daviesgr-m4massloss/'
+garstec_data = r'/rds/projects/d/daviesgr-m4massloss/Garstec_AS09_chiara.hdf5'
+
 
 # 7 Inputs
 ages = []
@@ -57,13 +64,18 @@ with h5py.File(garstec_data, 'r') as hdf:
     random.seed(1)
     random.shuffle(track_names)
 
+    # Tracks that don't have G_GAIA for some reason??
+    tracks_to_remove = ['track08278', 'track07930']
+    for track in tracks_to_remove:
+        if track in track_names:
+            track_names.remove(track)
+
     # Choose a subset of tracks to process
-    num_tracks = 1000  # Set the number of tracks to process
-    selected_tracks = track_names[:num_tracks]
+    # num_tracks =    # Set the number of tracks to process
+    selected_tracks = track_names[:]
 
     for track_name in selected_tracks:  # Iterate over the selected track names
         track = tracks[track_name]
-        
         # Inputs
         ages.append(track['age'][:])
         massini.append(track['massini'][:])
@@ -165,7 +177,7 @@ optimizer = optim.Adam(model.parameters(), lr=0.01)
 train_losses = []
 test_losses = []
 
-epochs = 100
+epochs = 10000
 best_test_loss = float('inf')  # Initialize with infinity, so any loss will be better initially
 best_model_wts = None  # Variable to store the best model's weights
 best_epoch = -1 # Variable to store epoch of best model
@@ -173,9 +185,17 @@ best_epoch = -1 # Variable to store epoch of best model
 save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V4'
 os.makedirs(save_dir, exist_ok=True)  # Create directory if it doesn't exist
 
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=250, gamma=0.85)
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=250, gamma=0.8)
 
 for epoch in range(epochs):
+
+    # Check elapsed time
+    elapsed_time = time.time() - start_time
+
+    # Exit the loop if the runtime exceeds the maximum time limit
+    if elapsed_time >= max_runtime:
+        print(f"Maximum runtime of {max_runtime} seconds reached. Exiting training loop.")
+        break
 
     model.train()  # Set model to training mode
     epoch_train_loss = 0  # Accumulator for training loss
@@ -224,6 +244,7 @@ for epoch in range(epochs):
     if (epoch+1) % 500 == 0:
         print(f"Epoch {epoch+1}/{epochs}, Train Loss: {epoch_train_loss:.4f}, Test Loss: {epoch_test_loss:.4f}, LR: {scheduler.get_last_lr()[0]:.6f}")
 
+
 # Training complete
 # Save the overall best model at the end of the training loop (after all epochs)
 if best_model_wts is not None:
@@ -237,3 +258,8 @@ if best_model_wts is not None:
     }, os.path.join(save_dir, 'best_model.pth'))  # Save model checkpoint
 
     print(f"Best model saved to {os.path.join(save_dir, 'best_model.pth')}, epoch: {best_epoch}, test loss: {best_test_loss}")
+
+total_time = time.time() - start_time
+total_seconds = total_time % 60
+
+print(f"Script completed in {int(total_seconds)} seconds.")
