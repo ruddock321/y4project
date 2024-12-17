@@ -20,12 +20,12 @@ if torch.cuda.is_available():
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-print(device)
+print("Device: ",device)
 
 num_cores = os.cpu_count()
 print("Number of cores: ",num_cores)
 
-garstec_data = r'/rds/projects/d/daviesgr-m4massloss/Garstec_AS09_chiara.hdf5'
+garstec_data = r'/rds/projects/d/daviesgr-m4massloss/'
 
 # 7 Inputs
 ages = []
@@ -110,7 +110,6 @@ outputs = np.hstack(log10_transformed_outputs + [np.concatenate(FeH).reshape(-1,
                                                  np.concatenate(MeH).reshape(-1, 1),
                                                  np.concatenate(G_GAIA).reshape(-1, 1)])
 
-
 # Split the data into training and testing sets
 X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=1)
 
@@ -132,10 +131,8 @@ X_test_tensor = torch.tensor(X_test, dtype=torch.float32).to(device)
 y_train_tensor = torch.tensor(y_train, dtype=torch.float32).to(device)
 y_test_tensor = torch.tensor(y_test, dtype=torch.float32).to(device)
 
-num_cores = os.cpu_count()
-
 dataset = TensorDataset(X_train_tensor, y_train_tensor)
-dataloader = DataLoader(dataset, batch_size=2**14, shuffle=True, num_workers=num_cores)
+dataloader = DataLoader(dataset, batch_size=2**14, shuffle=True)  
 
 # Define the neural network
 class GarstecNet(nn.Module):
@@ -168,12 +165,12 @@ optimizer = optim.Adam(model.parameters(), lr=0.01)
 train_losses = []
 test_losses = []
 
-epochs = 5
+epochs = 100
 best_test_loss = float('inf')  # Initialize with infinity, so any loss will be better initially
 best_model_wts = None  # Variable to store the best model's weights
+best_epoch = -1 # Variable to store epoch of best model
 
-save_dir = r'/rds/projects/d/daviesgr-m4massloss'
-
+save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V4'
 os.makedirs(save_dir, exist_ok=True)  # Create directory if it doesn't exist
 
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=250, gamma=0.85)
@@ -218,27 +215,25 @@ for epoch in range(epochs):
     if epoch_test_loss < best_test_loss:
         best_test_loss = epoch_test_loss
         best_model_wts = model.state_dict()  # Save the best model's weights
+        best_epoch = epoch + 1
 
     # Step the scheduler
     scheduler.step()
 
     # Print progress
-    if (epoch+1) % 1 == 0:
+    if (epoch+1) % 500 == 0:
         print(f"Epoch {epoch+1}/{epochs}, Train Loss: {epoch_train_loss:.4f}, Test Loss: {epoch_test_loss:.4f}, LR: {scheduler.get_last_lr()[0]:.6f}")
-
-
 
 # Training complete
 # Save the overall best model at the end of the training loop (after all epochs)
 if best_model_wts is not None:
     # Save the best model's weights and optimizer state at the end of training
     torch.save({
-        'epoch': epochs,  # You can also store the final epoch number
+        'epoch': epochs,  
         'model_state_dict': best_model_wts,
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict(),
         'loss': best_test_loss,
     }, os.path.join(save_dir, 'best_model.pth'))  # Save model checkpoint
 
-    print(f"Best model saved to {os.path.join(save_dir, 'best_model.pth')}")
-
+    print(f"Best model saved to {os.path.join(save_dir, 'best_model.pth')}, epoch: {best_epoch}, test loss: {best_test_loss}")
