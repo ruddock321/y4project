@@ -15,7 +15,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_error
 
 start_time = time.time()
-max_runtime = 35000    # <10 hours in seconds
+max_runtime = 432000    # 5 days in seconds
 
 print("Python version:", sys.version)
 print("PyTorch version:", torch.__version__)
@@ -60,6 +60,7 @@ with h5py.File(garstec_data, 'r') as hdf:
     tracks = grid['tracks']
 
     # Get a list of track names and shuffle for random sampling
+    # This is not actually necessary since we are using all the tracks, but I will leave it in anyway
     track_names = list(tracks.keys())
     random.seed(1)
     random.shuffle(track_names)
@@ -70,8 +71,12 @@ with h5py.File(garstec_data, 'r') as hdf:
         if track in track_names:
             track_names.remove(track)
 
-    # Choose a subset of tracks to process
-    # num_tracks =    # Set the number of tracks to process
+    # Choose a subset of tracks to process (or not)
+    # -----------
+
+    # num_tracks =     
+    
+    # Set the number of tracks to process
     selected_tracks = track_names[:]
 
     for track_name in selected_tracks:  # Iterate over the selected track names
@@ -171,13 +176,13 @@ class GarstecNet(nn.Module):
 # Instantiate model, loss function, and optimizer
 model = GarstecNet().to(device)
 criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.01)
+optimizer = optim.Adam(model.parameters(), lr=0.02)
 
 # Lists to store loss for plotting
 train_losses = []
 test_losses = []
 
-epochs = 10000
+epochs = 5000
 best_test_loss = float('inf')  # Initialize with infinity, so any loss will be better initially
 best_model_wts = None  # Variable to store the best model's weights
 best_epoch = -1 # Variable to store epoch of best model
@@ -260,6 +265,6 @@ if best_model_wts is not None:
     print(f"Best model saved to {os.path.join(save_dir, 'best_model.pth')}, epoch: {best_epoch}, test loss: {best_test_loss}")
 
 total_time = time.time() - start_time
-total_seconds = total_time % 60
+total_seconds = 60
 
 print(f"Script completed in {int(total_seconds)} seconds.")
