@@ -187,7 +187,7 @@ best_test_loss = float('inf')  # Initialize with infinity, so any loss will be b
 best_model_wts = None  # Variable to store the best model's weights
 best_epoch = -1 # Variable to store epoch of best model
 
-save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V5'
+save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V6'
 os.makedirs(save_dir, exist_ok=True)  # Create directory if it doesn't exist
 
 gamma = 0.999  # Decay factor, over 5000 epochs should finish at LR ~ 10^-6
@@ -263,7 +263,7 @@ if best_model_wts is not None:
         'loss': best_test_loss,
     }, os.path.join(save_dir, 'best_model_v6.pth'))  # Save model checkpoint
 
-    print(f"Best model saved to {os.path.join(save_dir, 'best_model.pth')}, epoch: {best_epoch}, test loss: {best_test_loss}")
+    print(f"Best model saved to {os.path.join(save_dir, 'best_model_v6.pth')}, epoch: {best_epoch}, test loss: {best_test_loss}")
 
 total_time = time.time() - start_time
 
