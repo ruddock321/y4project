@@ -15,7 +15,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_error
 
 start_time = time.time()
-max_runtime = 172800    # 2 days in seconds
+max_runtime = 7200    # 2 hours in seconds
 
 print("Python version:", sys.version)
 print("PyTorch version:", torch.__version__)
@@ -143,13 +143,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 
 # Convert data to PyTorch tensors and move to gpu
-X_train_tensor = torch.tensor(X_train, dtype=torch.float32).to(device)
-X_test_tensor = torch.tensor(X_test, dtype=torch.float32).to(device)
-y_train_tensor = torch.tensor(y_train, dtype=torch.float32).to(device)
-y_test_tensor = torch.tensor(y_test, dtype=torch.float32).to(device)
+X_train_tensor = torch.tensor(X_train, dtype=torch.float32, device=device)
+X_test_tensor = torch.tensor(X_test, dtype=torch.float32, device=device)
+y_train_tensor = torch.tensor(y_train, dtype=torch.float32, device=device)
+y_test_tensor = torch.tensor(y_test, dtype=torch.float32, device=device)
 
 dataset = TensorDataset(X_train_tensor, y_train_tensor)
-dataloader = DataLoader(dataset, batch_size=2**16, shuffle=True)  
+dataloader = DataLoader(dataset, batch_size=2**16, shuffle=True, num_workers=0, pin_memory=False)  
 
 # Define the neural network
 class GarstecNet(nn.Module):
@@ -178,11 +178,7 @@ model = GarstecNet().to(device)
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.01)
 
-# Lists to store loss for plotting
-train_losses = []
-test_losses = []
-
-epochs = 5000
+epochs = 10000
 best_test_loss = float('inf')  # Initialize with infinity, so any loss will be better initially
 best_model_wts = None  # Variable to store the best model's weights
 best_epoch = -1 # Variable to store epoch of best model
@@ -207,10 +203,7 @@ for epoch in range(epochs):
     epoch_train_loss = 0  # Accumulator for training loss
     
     for batch_X, batch_y in dataloader:     # Iterate over DataLoader batches
-        
-        # Move to GPU
-        batch_X, batch_y = batch_X.to(device), batch_y.to(device)
-
+      
         optimizer.zero_grad()    # Clear gradients
         predictions = model(batch_X)    # Forward pass
 
@@ -221,21 +214,12 @@ for epoch in range(epochs):
         epoch_train_loss += loss.item()      # Add batch loss to epoch loss
     
     epoch_train_loss /= len(dataloader)      # Average training loss
-    train_losses.append(epoch_train_loss)       # Store training loss
     
     # Testing phase
     model.eval()    # Set model to evaluation mode
-    epoch_test_loss = 0      # Accumulator for test loss
-    
     with torch.no_grad():   # Disable gradient computation for testing
-        
-        X_test_tensor = X_test_tensor.to(device)
-        y_test_tensor = y_test_tensor.to(device)
-
         test_predictions = model(X_test_tensor)      # Forward pass for test set
-        epoch_test_loss = criterion(test_predictions, y_test_tensor).item()     # Compute loss
-        test_losses.append(epoch_test_loss)      # Store test loss
-    
+        epoch_test_loss = criterion(test_predictions, y_test_tensor).item()     # Compute loss    
 
     # Check if the current test loss is the best (lowest)
     if epoch_test_loss < best_test_loss:
@@ -247,7 +231,7 @@ for epoch in range(epochs):
     scheduler.step()
 
     # Print progress
-    if (epoch+1) % 250 == 0:
+    if (epoch+1) % 200 == 0:
         print(f"Epoch {epoch+1}/{epochs}, Train Loss: {epoch_train_loss:.4f}, Test Loss: {epoch_test_loss:.4f}, LR: {scheduler.get_last_lr()[0]:.6f}")
 
 
@@ -263,7 +247,7 @@ if best_model_wts is not None:
         'loss': best_test_loss,
     }, os.path.join(save_dir, 'best_model_v6.pth'))  # Save model checkpoint
 
-    print(f"Best model saved to {os.path.join(save_dir, 'best_model_v6.pth')}, epoch: {best_epoch}, test loss: {best_test_loss}")
+    print(f"Best model saved to {os.path.join(save_dir, 'best_model_v6_2.pth')}, epoch: {best_epoch}, test loss: {best_test_loss}")
 
 total_time = time.time() - start_time
 
