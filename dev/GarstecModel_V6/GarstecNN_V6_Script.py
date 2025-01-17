@@ -15,7 +15,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_error
 
 start_time = time.time()
-max_runtime = 7200    # 2 hours in seconds
+max_runtime = 172800    # 2 days in seconds
 
 print("Python version:", sys.version)
 print("PyTorch version:", torch.__version__)
@@ -31,6 +31,11 @@ print("Device: ",device)
 num_cores = os.cpu_count()
 print("Number of cores: ",num_cores)
 
+# Windows directory
+#garstec_data = r'C:\Users\kiena\Documents\YEAR 4\PROJECT\Data\Garstec_AS09_chiara.hdf5'
+
+
+# RDS directory
 garstec_data = r'/rds/projects/d/daviesgr-m4massloss/Garstec_AS09_chiara.hdf5'
 
 
@@ -100,8 +105,7 @@ with h5py.File(garstec_data, 'r') as hdf:
         numax.append(track['numax'][:])
         MeH.append(track['MeH'][:])
 
-# Convert lists to numpy arrays and concatenate them (make one big list)
-
+# Convert lists to numpy arrays and concatenate 
 # Define a small constant to avoid log10(0)
 epsilon = 1e-10
 
@@ -143,13 +147,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 
 # Convert data to PyTorch tensors and move to gpu
-X_train_tensor = torch.tensor(X_train, dtype=torch.float32, device=device)
-X_test_tensor = torch.tensor(X_test, dtype=torch.float32, device=device)
-y_train_tensor = torch.tensor(y_train, dtype=torch.float32, device=device)
-y_test_tensor = torch.tensor(y_test, dtype=torch.float32, device=device)
+X_train_tensor = torch.tensor(X_train, dtype=torch.float32).to(device)
+X_test_tensor = torch.tensor(X_test, dtype=torch.float32).to(device)
+y_train_tensor = torch.tensor(y_train, dtype=torch.float32).to(device)
+y_test_tensor = torch.tensor(y_test, dtype=torch.float32).to(device)
 
 dataset = TensorDataset(X_train_tensor, y_train_tensor)
-dataloader = DataLoader(dataset, batch_size=2**16, shuffle=True, num_workers=0, pin_memory=False)  
+dataloader = DataLoader(dataset, batch_size=2**16, shuffle=True)  
 
 # Define the neural network
 class GarstecNet(nn.Module):
@@ -157,11 +161,11 @@ class GarstecNet(nn.Module):
         super(GarstecNet, self).__init__()
         
         # Input layer -> First hidden layer
-        self.dense1 = nn.Linear(7, 256)  # Wider first layer
-        self.dense2 = nn.Linear(256, 256)
-        self.dense3 = nn.Linear(256, 128)
-        self.dense4 = nn.Linear(128, 128)  
-        self.dense5 = nn.Linear(128, 64)        
+        self.dense1 = nn.Linear(7, 128)  # Wider first layer
+        self.dense2 = nn.Linear(128, 128)
+        self.dense3 = nn.Linear(128, 128)
+        self.dense4 = nn.Linear(128, 64)  
+        self.dense5 = nn.Linear(64, 64)        
         self.dense6 = nn.Linear(64, 8)  # Assuming 8 output features
         
     def forward(self, x):
@@ -174,7 +178,7 @@ class GarstecNet(nn.Module):
         return x
 
 # Instantiate model, loss function, and optimizer
-model = GarstecNet().to(device)
+model = GarstecNet().to(device=device)
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.01)
 
@@ -183,7 +187,7 @@ best_test_loss = float('inf')  # Initialize with infinity, so any loss will be b
 best_model_wts = None  # Variable to store the best model's weights
 best_epoch = -1 # Variable to store epoch of best model
 
-save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V6'
+save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V6.2'
 os.makedirs(save_dir, exist_ok=True)  # Create directory if it doesn't exist
 
 gamma = 0.999  # Decay factor, over 5000 epochs should finish at LR ~ 10^-6
@@ -203,7 +207,8 @@ for epoch in range(epochs):
     epoch_train_loss = 0  # Accumulator for training loss
     
     for batch_X, batch_y in dataloader:     # Iterate over DataLoader batches
-      
+        
+        batch_X, batch_y = batch_X.to(device), batch_y.to(device)
         optimizer.zero_grad()    # Clear gradients
         predictions = model(batch_X)    # Forward pass
 
@@ -231,9 +236,8 @@ for epoch in range(epochs):
     scheduler.step()
 
     # Print progress
-    if (epoch+1) % 200 == 0:
+    if (epoch+1) % 250 == 0:
         print(f"Epoch {epoch+1}/{epochs}, Train Loss: {epoch_train_loss:.4f}, Test Loss: {epoch_test_loss:.4f}, LR: {scheduler.get_last_lr()[0]:.6f}")
-
 
 # Training complete
 # Save the overall best model at the end of the training loop (after all epochs)
@@ -245,10 +249,11 @@ if best_model_wts is not None:
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict(),
         'loss': best_test_loss,
-    }, os.path.join(save_dir, 'best_model_v6.pth'))  # Save model checkpoint
+    }, os.path.join(save_dir, 'best_model_v6_3.pth'))  # Save model checkpoint
 
-    print(f"Best model saved to {os.path.join(save_dir, 'best_model_v6_2.pth')}, epoch: {best_epoch}, test loss: {best_test_loss}")
+    print(f"Best model saved to {os.path.join(save_dir, 'best_model_v6_3.pth')}, epoch: {best_epoch}, test loss: {best_test_loss}")
 
 total_time = time.time() - start_time
 
 print(f"Script completed in {int(total_time)} seconds.")
+
