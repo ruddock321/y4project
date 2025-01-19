@@ -259,7 +259,7 @@ trainer = Trainer(
     max_epochs=10000,
     gpus=4,  # Use 4 GPUs
     accelerator='gpu',  # Multi-GPU training
-    strategy='ddp',  # Distributed Data Parallel
+    strategy='ddp',  # Distributed Data Parallel - model fits onto a single GPU
     callbacks=[checkpoint_callback, lr_monitor, timer_callback],
     log_every_n_steps=50
 )
