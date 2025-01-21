@@ -11,15 +11,12 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from pytorch_lightning import LightningModule, LightningDataModule, Trainer
-from pytorch_lightning.utilities.seed import seed_everything
+from pytorch_lightning import seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, Timer
 
 
-# Seed for reproducibility
-seed_everything(1)
-
 start_time = time.time()
-timer_callback = Timer(duration="0:15:00")
+timer_callback = Timer(duration="00:01:00:00")  # dd:hh:mm:ss
 
 # Print Python, PyTorch, and CUDA version information
 print("Python version:", sys.version)
@@ -48,7 +45,8 @@ print("Number of cores: ", num_cores)
 
 # Windows directory
 #garstec_data = r'C:\Users\kiena\Documents\YEAR 4\PROJECT\Data\Garstec_AS09_chiara.hdf5'
-
+#save_dir = r'C:\Users\kiena\Documents\YEAR 4\PROJECT\Data'
+#os.makedirs(save_dir, exist_ok=True)
 
 # RDS directory
 garstec_data = r'/rds/projects/d/daviesgr-m4massloss/Garstec_AS09_chiara.hdf5'
@@ -157,6 +155,7 @@ class GarstecDataModule(LightningDataModule):
         self.y_train = y_train
         self.y_test = y_test
         self.batch_size = batch_size
+        self.num_workers = os.cpu_count()
 
     def train_dataloader(self):
         train_dataset = TensorDataset(
@@ -257,11 +256,11 @@ lr_monitor = LearningRateMonitor(logging_interval='epoch')
 
 trainer = Trainer(
     max_epochs=10000,
-    gpus=4,  # Use 4 GPUs
+    devices=4,  # Use 1 GPUs
     accelerator='gpu',  # Multi-GPU training
     strategy='ddp',  # Distributed Data Parallel - model fits onto a single GPU
     callbacks=[checkpoint_callback, lr_monitor, timer_callback],
-    log_every_n_steps=50
+    log_every_n_steps=50,
 )
 
 # Train model
