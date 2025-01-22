@@ -16,7 +16,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, Ti
 
 
 start_time = time.time()
-timer_callback = Timer(duration="00:01:00:00")  # dd:hh:mm:ss
+timer_callback = Timer(duration="00:24:00:00")  # dd:hh:mm:ss
 
 # Print Python, PyTorch, and CUDA version information
 print("Python version:", sys.version)
@@ -209,14 +209,14 @@ class GarstecNet(LightningModule):
         x, y = batch
         y_pred = self(x)
         loss = self.criterion(y_pred, y)
-        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=False)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_pred = self(x)
         loss = self.criterion(y_pred, y)
-        self.log('val_loss', loss, on_epoch=True, prog_bar=True)
+        self.log('val_loss', loss, on_epoch=True, prog_bar=False)
         return loss
 
     def configure_optimizers(self):
@@ -256,7 +256,7 @@ lr_monitor = LearningRateMonitor(logging_interval='epoch')
 
 trainer = Trainer(
     max_epochs=10000,
-    devices=4,  # Use 1 GPUs
+    devices=2,  # Use 2 GPUs
     accelerator='gpu',  # Multi-GPU training
     strategy='ddp',  # Distributed Data Parallel - model fits onto a single GPU
     callbacks=[checkpoint_callback, lr_monitor, timer_callback],
