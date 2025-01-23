@@ -16,7 +16,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, Ti
 
 
 start_time = time.time()
-timer_callback = Timer(duration="00:24:00:00")  # dd:hh:mm:ss
+timer_callback = Timer(duration="00:02:00:00")  # dd:hh:mm:ss
 
 # Print Python, PyTorch, and CUDA version information
 print("Python version:", sys.version)
@@ -259,6 +259,7 @@ trainer = Trainer(
     devices=2,  # Use 2 GPUs
     accelerator='gpu',  # Multi-GPU training
     strategy='ddp',  # Distributed Data Parallel - model fits onto a single GPU
+    num_nodes=1,
     callbacks=[checkpoint_callback, lr_monitor, timer_callback],
     log_every_n_steps=50,
 )
