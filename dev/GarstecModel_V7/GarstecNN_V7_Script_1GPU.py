@@ -178,27 +178,17 @@ class GarstecNet(LightningModule):
         self.save_hyperparameters()
         
         self.model = nn.Sequential(
-            nn.Linear(input_dim, 512),  # First layer maps input_dim to 512 neurons
+            nn.Linear(input_dim, 256),  # First layer maps input_dim to 256 neurons
             nn.ReLU(),
-            nn.Linear(512, 512),  # 2
+            nn.Linear(256, 256),  # 2
             nn.ReLU(),
-            nn.Linear(512, 512),  # 3
+            nn.Linear(256, 256),  # 3
             nn.ReLU(),
-            nn.Linear(512, 512),  # 4
+            nn.Linear(256, 256),  # 4
             nn.ReLU(),
-            nn.Linear(512, 512),  # 5
+            nn.Linear(256, 256),  # 5
             nn.ReLU(),
-            nn.Linear(512, 512),  # 6
-            nn.ReLU(),
-            nn.Linear(512, 512),  # 7
-            nn.ReLU(),
-            nn.Linear(512, 512),  # 8
-            nn.ReLU(),
-            nn.Linear(512, 512),  # 9
-            nn.ReLU(),
-            nn.Linear(512, 512),  # 10
-            nn.ReLU(),
-            nn.Linear(512, output_dim)  # Output layer
+            nn.Linear(256, output_dim)  # Output layer
         )
         self.criterion = nn.MSELoss()
 

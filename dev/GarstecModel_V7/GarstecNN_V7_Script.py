@@ -16,7 +16,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, Ti
 
 
 start_time = time.time()
-timer_callback = Timer(duration="00:02:00:00")  # dd:hh:mm:ss
+timer_callback = Timer(duration="02:00:00:00")  # dd:hh:mm:ss
 
 # Print Python, PyTorch, and CUDA version information
 print("Python version:", sys.version)
@@ -178,27 +178,17 @@ class GarstecNet(LightningModule):
         self.save_hyperparameters()
         
         self.model = nn.Sequential(
-            nn.Linear(input_dim, 512),  # First layer maps input_dim to 512 neurons
+            nn.Linear(input_dim, 256),  # First layer maps input_dim to 256 neurons
             nn.ReLU(),
-            nn.Linear(512, 512),  # 2
+            nn.Linear(256, 256),  # 2
             nn.ReLU(),
-            nn.Linear(512, 512),  # 3
+            nn.Linear(256, 256),  # 3
             nn.ReLU(),
-            nn.Linear(512, 512),  # 4
+            nn.Linear(256, 256),  # 4
             nn.ReLU(),
-            nn.Linear(512, 512),  # 5
+            nn.Linear(256, 256),  # 5
             nn.ReLU(),
-            nn.Linear(512, 512),  # 6
-            nn.ReLU(),
-            nn.Linear(512, 512),  # 7
-            nn.ReLU(),
-            nn.Linear(512, 512),  # 8
-            nn.ReLU(),
-            nn.Linear(512, 512),  # 9
-            nn.ReLU(),
-            nn.Linear(512, 512),  # 10
-            nn.ReLU(),
-            nn.Linear(512, output_dim)  # Output layer
+            nn.Linear(256, output_dim)  # Output layer
         )
         self.criterion = nn.MSELoss()
 
@@ -255,7 +245,7 @@ checkpoint_callback = ModelCheckpoint(
 lr_monitor = LearningRateMonitor(logging_interval='epoch')
 
 trainer = Trainer(
-    max_epochs=10000,
+    max_epochs=50000,
     devices=2,  # Use 2 GPUs
     accelerator='gpu',  # Multi-GPU training
     strategy='ddp',  # Distributed Data Parallel - model fits onto a single GPU
