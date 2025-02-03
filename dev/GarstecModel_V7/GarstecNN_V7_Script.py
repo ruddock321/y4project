@@ -16,7 +16,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, Ti
 
 
 start_time = time.time()
-timer_callback = Timer(duration="02:00:00:00")  # dd:hh:mm:ss
+timer_callback = Timer(duration="00:23:00:00")  # dd:hh:mm:ss
 
 # Print Python, PyTorch, and CUDA version information
 print("Python version:", sys.version)
@@ -155,21 +155,21 @@ class GarstecDataModule(LightningDataModule):
         self.y_train = y_train
         self.y_test = y_test
         self.batch_size = batch_size
-        self.num_workers = os.cpu_count()
+        self.num_workers = min(16, os.cpu_count())
 
     def train_dataloader(self):
         train_dataset = TensorDataset(
             torch.tensor(self.X_train, dtype=torch.float32),
             torch.tensor(self.y_train, dtype=torch.float32)
         )
-        return DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
+        return DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, pin_memory=True)
 
     def val_dataloader(self):
         val_dataset = TensorDataset(
             torch.tensor(self.X_test, dtype=torch.float32),
             torch.tensor(self.y_test, dtype=torch.float32)
         )
-        return DataLoader(val_dataset, batch_size=self.batch_size)
+        return DataLoader(val_dataset, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True)
 
 # Lightning Module
 class GarstecNet(LightningModule):
@@ -178,17 +178,17 @@ class GarstecNet(LightningModule):
         self.save_hyperparameters()
         
         self.model = nn.Sequential(
-            nn.Linear(input_dim, 256),  # First layer maps input_dim to 256 neurons
+            nn.Linear(input_dim, 64),  # First layer maps input_dim to 256 neurons
             nn.ReLU(),
-            nn.Linear(256, 256),  # 2
+            nn.Linear(64, 64),  # 2
             nn.ReLU(),
-            nn.Linear(256, 256),  # 3
+            nn.Linear(64, 64),  # 3
             nn.ReLU(),
-            nn.Linear(256, 256),  # 4
+            nn.Linear(64, 64),  # 4
             nn.ReLU(),
-            nn.Linear(256, 256),  # 5
+            nn.Linear(64, 64),  # 5
             nn.ReLU(),
-            nn.Linear(256, output_dim)  # Output layer
+            nn.Linear(64, output_dim)  # Output layer
         )
         self.criterion = nn.MSELoss()
 
@@ -245,10 +245,11 @@ checkpoint_callback = ModelCheckpoint(
 lr_monitor = LearningRateMonitor(logging_interval='epoch')
 
 trainer = Trainer(
-    max_epochs=50000,
+    max_epochs=100000,
     devices=2,  # Use 2 GPUs
     accelerator='gpu',  # Multi-GPU training
     strategy='ddp',  # Distributed Data Parallel - model fits onto a single GPU
+    precision="bf16-mixed",  # Use BFloat16 mixed precision for better performance on A100 GPUs
     num_nodes=1,
     callbacks=[checkpoint_callback, lr_monitor, timer_callback],
     log_every_n_steps=50,
