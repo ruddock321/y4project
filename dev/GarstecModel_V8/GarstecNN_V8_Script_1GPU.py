@@ -52,7 +52,7 @@ print("Number of cores: ", num_cores)
 
 # RDS directory
 garstec_data = r'/rds/projects/d/daviesgr-m4massloss/Garstec_AS09_chiara.hdf5'
-save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V7'
+save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V8'
 os.makedirs(save_dir, exist_ok=True)
 
 # 7 Inputs
