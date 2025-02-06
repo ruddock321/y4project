@@ -218,7 +218,7 @@ model = GarstecNet(input_dim=input_dim, output_dim=output_dim)
 checkpoint_callback = ModelCheckpoint(
     monitor='val_loss',
     dirpath=save_dir,
-    filename='best_model_v7-{epoch:02d}-{val_loss:.4f}',
+    filename='best_model_v8-{epoch:02d}-{val_loss:.4f}',
     save_top_k=1,
     mode='min'
 )
