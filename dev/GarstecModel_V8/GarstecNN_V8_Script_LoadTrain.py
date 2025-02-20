@@ -18,7 +18,7 @@ torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
 
 start_time = time.time()
-timer_callback = Timer(duration="00:24:00:00")  # dd:hh:mm:ss
+timer_callback = Timer(duration="00:44:00:00")  # dd:hh:mm:ss
 
 # Print Python, PyTorch, and CUDA version information
 print("Python version:", sys.version)
@@ -190,34 +190,33 @@ class GarstecNet(LightningModule):
         return loss
 
     def configure_optimizers(self):
-        # Using vanilla Adam with a higher learning rate and no weight decay
-        optimizer = torch.optim.Adam(
+        # Using SGD with momentum 
+        optimizer = torch.optim.SGD(
             self.parameters(),
             lr=self.hparams.learning_rate,
-            betas=(0.9, 0.99),
-            eps=1e-8
+            momentum=0, 
+            weight_decay=1e-5  # Adding small weight decay for regularization
         )
-        
-        # Using a custom cyclic learning rate scheduler
-        scheduler = torch.optim.lr_scheduler.CyclicLR(
+    
+        # Modifying the learning rate scheduler for SGD
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
-            base_lr=1e-6,  # Minimum LR
-            max_lr=5e-3,   # Maximum LR
-            step_size_up=50,  # Steps to reach max_lr
-            step_size_down=200,  # Steps to reach base_lr
-            mode='triangular',  # Exponentially decreasing peak learning rates
-            cycle_momentum=False
+            mode='min',
+            factor=0.5,  # Reduce LR by half when plateau is detected
+            patience=30,  # Wait for 20 epochs before reducing LR
+            min_lr=1e-7,  # Minimum learning rate
+            verbose=True
         )
-        
+    
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "interval": "step",
+                "monitor": "train_loss",  # Monitor train loss for scheduler
+                "interval": "epoch",
                 "frequency": 1
             }
         }
-
     
 X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=1)
 
@@ -238,7 +237,7 @@ data_module = GarstecDataModule(X_train, X_test, y_train, y_test, batch_size=bat
 input_dim = X_train.shape[1]
 output_dim = y_train.shape[1]
 model = GarstecNet.load_from_checkpoint(
-    checkpoint_path="best_model_v8-1-epoch=9965-val_loss=0.0071.ckpt",
+    checkpoint_path="fine_tuned_model_v8-epoch=11847-train_loss=0.00627.ckpt",
     input_dim=input_dim,
     output_dim=output_dim,
     learning_rate=5e-3
@@ -257,7 +256,7 @@ checkpoint_callback = ModelCheckpoint(
 lr_monitor = LearningRateMonitor(logging_interval='step')
 
 trainer = Trainer(
-    max_epochs=20000,
+    max_epochs=50000,
     devices=1,
     accelerator='gpu',
     num_nodes=1,
