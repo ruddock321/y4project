@@ -10,6 +10,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 from pytorch_lightning import LightningModule, LightningDataModule, Trainer
 from pytorch_lightning import seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, Timer
@@ -18,7 +19,7 @@ torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
 
 start_time = time.time()
-timer_callback = Timer(duration="00:24:00:00")  # dd:hh:mm:ss
+timer_callback = Timer(duration="00:99:00:00")  # dd:hh:mm:ss
 
 # Print Python, PyTorch, and CUDA version information
 print("Python version:", sys.version)
@@ -158,17 +159,17 @@ class GarstecNet(LightningModule):
         self.save_hyperparameters()
         
         self.model = nn.Sequential(
-            nn.Linear(input_dim, 256),  # First layer maps input_dim to 256 neurons
+            nn.Linear(input_dim, 512),  # First layer maps input_dim to 256 neurons
             nn.ReLU(),
-            nn.Linear(256, 256),  # 2
+            nn.Linear(512, 512),  # 2
             nn.ReLU(),
-            nn.Linear(256, 256),  # 3
+            nn.Linear(512, 512),  # 3
             nn.ReLU(),
-            nn.Linear(256, 256),  # 4
+            nn.Linear(512, 512),  # 4
             nn.ReLU(),
-            nn.Linear(256, 256),  # 5
+            nn.Linear(512, 512),  # 5
             nn.ReLU(),
-            nn.Linear(256, output_dim)  # Output layer
+            nn.Linear(512, output_dim)  # Output layer
         )
         self.criterion = nn.MSELoss()
 
@@ -218,20 +219,20 @@ model = GarstecNet(input_dim=input_dim, output_dim=output_dim)
 checkpoint_callback = ModelCheckpoint(
     monitor='val_loss',
     dirpath=save_dir,
-    filename='best_model_v8-{epoch:02d}-{val_loss:.4f}',
+    filename='best_model_StandardScaler_v8-512-{epoch:02d}-{val_loss:.4f}',
     save_top_k=1,
     mode='min'
 )
 lr_monitor = LearningRateMonitor(logging_interval='epoch')
 
 trainer = Trainer(
-    max_epochs=10000,
+    max_epochs=200000,
     devices=1,  # Use 1 GPU
     accelerator='gpu',
     num_nodes=1,
     precision="16-mixed",  # Reduces memory usage while maintaining performance
     callbacks=[checkpoint_callback, lr_monitor, timer_callback],
-    log_every_n_steps=50,
+    log_every_n_steps=10,
 )
 
 # Train model

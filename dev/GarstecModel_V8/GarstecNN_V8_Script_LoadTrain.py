@@ -18,7 +18,7 @@ torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
 
 start_time = time.time()
-timer_callback = Timer(duration="00:44:00:00")  # dd:hh:mm:ss
+timer_callback = Timer(duration="00:24:00:00")  # dd:hh:mm:ss
 
 # Print Python, PyTorch, and CUDA version information
 print("Python version:", sys.version)
@@ -128,7 +128,7 @@ outputs = np.hstack(log10_transformed_outputs + [np.concatenate(FeH).reshape(-1,
 
 # Data Module
 class GarstecDataModule(LightningDataModule):
-    def __init__(self, X_train, X_test, y_train, y_test, batch_size=2**17):
+    def __init__(self, X_train, X_test, y_train, y_test, batch_size=2**18):
         super().__init__()
         self.X_train = X_train
         self.X_test = X_test
@@ -153,7 +153,7 @@ class GarstecDataModule(LightningDataModule):
 
 # Lightning Module
 class GarstecNet(LightningModule):
-    def __init__(self, input_dim, output_dim, learning_rate=5e-3):
+    def __init__(self, input_dim, output_dim, learning_rate=1e-3):
         super().__init__()
         self.save_hyperparameters()
         
@@ -191,21 +191,19 @@ class GarstecNet(LightningModule):
 
     def configure_optimizers(self):
         # Using SGD with momentum 
-        optimizer = torch.optim.SGD(
+        optimizer = torch.optim.Adam(
             self.parameters(),
             lr=self.hparams.learning_rate,
-            momentum=0, 
-            weight_decay=1e-5  # Adding small weight decay for regularization
+            betas=(0.9, 0.999),
+            eps=1e-8
         )
     
-        # Modifying the learning rate scheduler for SGD
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        # Cosine Annealing with Warm Restarts
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
             optimizer,
-            mode='min',
-            factor=0.5,  # Reduce LR by half when plateau is detected
-            patience=30,  # Wait for 20 epochs before reducing LR
-            min_lr=1e-7,  # Minimum learning rate
-            verbose=True
+            T_0=100,  # First restart after 100 epochs
+            T_mult=2,  # Double the restart interval after each restart
+            eta_min=1e-7
         )
     
         return {
@@ -230,7 +228,7 @@ y_train = scaler_y.fit_transform(y_train)
 y_test = scaler_y.transform(y_test)
 
 # Define batch size and data module
-batch_size = 2**17
+batch_size = 2**18
 data_module = GarstecDataModule(X_train, X_test, y_train, y_test, batch_size=batch_size)
 
 # Initialize model and load checkpoint
@@ -240,14 +238,14 @@ model = GarstecNet.load_from_checkpoint(
     checkpoint_path="fine_tuned_model_v8-epoch=11847-train_loss=0.00627.ckpt",
     input_dim=input_dim,
     output_dim=output_dim,
-    learning_rate=5e-3
+    learning_rate=1e-3
 )
 
 # New checkpoint callback
 checkpoint_callback = ModelCheckpoint(
     monitor='train_loss',  # Changed to train_loss
     dirpath=save_dir,
-    filename='fine_tuned_model_v8-{epoch:02d}-{train_loss:.5f}',  # More decimal places
+    filename='ultra_fine_tuned_model-{epoch:02d}-{train_loss:.6f}',  # More decimal places
     save_top_k=1,
     mode='min',
     every_n_epochs=1
@@ -262,7 +260,7 @@ trainer = Trainer(
     num_nodes=1,
     precision="16-mixed",
     callbacks=[checkpoint_callback, lr_monitor, timer_callback],
-    log_every_n_steps=50,
+    log_every_n_steps=10,
 )
 
 # Continue training
