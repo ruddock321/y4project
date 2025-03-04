@@ -46,11 +46,6 @@ print("Device: ", device)
 num_cores = os.cpu_count()
 print("Number of cores: ", num_cores)
 
-# Windows directory
-#garstec_data = r'C:\Users\kiena\Documents\YEAR 4\PROJECT\Data\Garstec_AS09_chiara.hdf5'
-#save_dir = r'C:\Users\kiena\Documents\YEAR 4\PROJECT\Data'
-#os.makedirs(save_dir, exist_ok=True)
-
 # RDS directory
 garstec_data = r'/rds/projects/d/daviesgr-m4massloss/Garstec_AS09_chiara.hdf5'
 save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V8'
@@ -159,17 +154,17 @@ class GarstecNet(LightningModule):
         self.save_hyperparameters()
         
         self.model = nn.Sequential(
-            nn.Linear(input_dim, 512),  # First layer maps input_dim to 256 neurons
+            nn.Linear(input_dim, 256),  # First layer maps input_dim to 256 neurons
             nn.ReLU(),
-            nn.Linear(512, 512),  # 2
+            nn.Linear(256, 256),  # 2
             nn.ReLU(),
-            nn.Linear(512, 512),  # 3
+            nn.Linear(256, 256),  # 3
             nn.ReLU(),
-            nn.Linear(512, 512),  # 4
+            nn.Linear(256, 256),  # 4
             nn.ReLU(),
-            nn.Linear(512, 512),  # 5
+            nn.Linear(256, 256),  # 5
             nn.ReLU(),
-            nn.Linear(512, output_dim)  # Output layer
+            nn.Linear(256, output_dim)  # Output layer
         )
         self.criterion = nn.MSELoss()
 
@@ -219,7 +214,7 @@ model = GarstecNet(input_dim=input_dim, output_dim=output_dim)
 checkpoint_callback = ModelCheckpoint(
     monitor='val_loss',
     dirpath=save_dir,
-    filename='best_model_StandardScaler_v8-512-{epoch:02d}-{val_loss:.4f}',
+    filename='best_model_StandardScaler_v8-256-{epoch:02d}-{val_loss:.4f}',
     save_top_k=1,
     mode='min'
 )
