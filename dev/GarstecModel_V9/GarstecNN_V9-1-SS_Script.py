@@ -13,7 +13,7 @@ from pytorch_lightning import LightningModule, LightningDataModule, Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, Timer
 from pytorch_lightning.tuner.tuning import Tuner
 
-timer_callback = Timer(duration="00:18:00:00")  # dd:hh:mm:ss
+timer_callback = Timer(duration="00:72:00:00")  # dd:hh:mm:ss
 
 # Print Python, PyTorch, and CUDA version information
 print("Python version:", sys.version)
@@ -118,7 +118,7 @@ outputs = np.hstack(log10_transformed_outputs + [np.concatenate(FeH).reshape(-1,
 
 # Data Module
 class GarstecDataModule(LightningDataModule):
-    def __init__(self, X_train, X_test, y_train, y_test, batch_size=2**16):
+    def __init__(self, X_train, X_test, y_train, y_test, batch_size=2**18):
         super().__init__()
         self.X_train = X_train
         self.X_test = X_test
@@ -183,7 +183,7 @@ class GarstecNet(LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.5, patience=25, verbose=True
+            optimizer, mode='min', factor=0.5, patience=30, verbose=True
         )
         return {
             "optimizer": optimizer,
@@ -209,7 +209,7 @@ y_train_scaled = output_scaler.fit_transform(y_train)
 y_test_scaled = output_scaler.transform(y_test)
 
 # Define batch size and data module
-batch_size = 2**16
+batch_size = 2**18
 data_module = GarstecDataModule(X_train_scaled, X_test_scaled, y_train_scaled, y_test_scaled, batch_size=batch_size)
 
 # Define model and trainer
@@ -221,7 +221,7 @@ model = GarstecNet(input_dim=input_dim, output_dim=output_dim, lr=1e-3)
 checkpoint_callback = ModelCheckpoint(
     monitor='val_loss',
     dirpath=save_dir,
-    filename='best_model_v9-1-SS---{epoch:02d}-{val_loss:.8f}',
+    filename='best_model_v9-1-Big-SS---{epoch:02d}-{val_loss:.8f}',
     save_top_k=1,
     mode='min'
 )
