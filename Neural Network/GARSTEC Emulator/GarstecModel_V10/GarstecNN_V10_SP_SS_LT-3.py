@@ -278,8 +278,6 @@ model.hparams.lr = new_lr
 # Configure the optimizers with the new learning rate and scheduler
 model.configure_optimizers()
 
-# Start the continued training
-print("Starting continued training with cosine annealing learning rate scheduler...")
 trainer.fit(model, data_module)
 
 # Save the final model

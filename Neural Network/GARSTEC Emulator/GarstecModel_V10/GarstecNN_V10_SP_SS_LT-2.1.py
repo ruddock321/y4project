@@ -51,7 +51,7 @@ save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V10'
 os.makedirs(save_dir, exist_ok=True)
 
 # Path to the checkpoint
-checkpoint_path = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V10/best_model_v10_SP-SS---epoch=7853-val_loss=0.00013553.ckpt'
+checkpoint_path = r'continued_model_v10_SP_SS-AdamW---epoch=2884-val_loss=0.00013064.ckpt'
 
 # 7 Inputs
 ages = []
@@ -126,7 +126,7 @@ outputs = np.hstack(log10_transformed_outputs + [np.concatenate(FeH).reshape(-1,
 
 # Data Module
 class GarstecDataModule(LightningDataModule):
-    def __init__(self, X_train, X_test, y_train, y_test, batch_size=2**16):
+    def __init__(self, X_train, X_test, y_train, y_test, batch_size=2**18):
         super().__init__()
         self.X_train = X_train
         self.X_test = X_test
@@ -158,11 +158,11 @@ class GarstecNet(LightningModule):
         self.register_buffer("loss_weights", torch.tensor(loss_weights, dtype=torch.float32))
 
         self.model = nn.Sequential(
-            nn.Linear(input_dim, 512), nn.ReLU(),
-            nn.Linear(512, 256), nn.ReLU(),
-            nn.Linear(256, 128), nn.ReLU(),
-            nn.Linear(128, 64), nn.ReLU(),
-            nn.Linear(64, 32), nn.ReLU(),
+            nn.Linear(input_dim, 512), nn.LeakyReLU(),
+            nn.Linear(512, 256), nn.LeakyReLU(),
+            nn.Linear(256, 128), nn.LeakyReLU(),
+            nn.Linear(128, 64), nn.LeakyReLU(),
+            nn.Linear(64, 32), nn.LeakyReLU(),
             nn.Linear(32, output_dim)
         )
         
@@ -215,7 +215,7 @@ y_train_scaled = output_scaler.fit_transform(y_train)
 y_test_scaled = output_scaler.transform(y_test)
 
 # Define batch size and data module
-batch_size = 2**16
+batch_size = 2**18
 data_module = GarstecDataModule(X_train_scaled, X_test_scaled, y_train_scaled, y_test_scaled, batch_size=batch_size)
 
 # Define weights for [T_eff, L, dnu, numax, feh]
@@ -243,7 +243,7 @@ print(f"Current model learning rate: {model.lr}")
 checkpoint_callback = ModelCheckpoint(
     monitor='val_loss',
     dirpath=save_dir,
-    filename='continued_model_v10_SP_SS-AdamW---{epoch:02d}-{val_loss:.8f}',
+    filename='continued_model_v10_SP_SS-AdamW-LeakyReLU---{epoch:02d}-{val_loss:.8f}',
     save_top_k=1,
     mode='min'
 )
