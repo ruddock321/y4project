@@ -23,7 +23,6 @@ print("Python version:", sys.version)
 print("PyTorch version:", torch.__version__)
 print("CUDA version:", torch.version.cuda)
 print("CUDA available:", torch.cuda.is_available())
-print("Default tensor type:", torch.get_default_dtype())
 
 # Check the number of GPUs available
 num_gpus = torch.cuda.device_count()
@@ -47,11 +46,8 @@ print("Number of cores: ", num_cores)
 
 # RDS directory
 garstec_data = r'/rds/projects/d/daviesgr-m4massloss/Garstec_AS09_chiara.hdf5'
-save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V10'
+save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V11'
 os.makedirs(save_dir, exist_ok=True)
-
-# Path to the checkpoint
-checkpoint_path = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V10/best_model_v10_SP-SS---epoch=7853-val_loss=0.00013553.ckpt'
 
 # 7 Inputs
 ages = []
@@ -123,10 +119,23 @@ log10_transformed_outputs = [np.log10(np.maximum(np.concatenate(var).reshape(-1,
 # Combine transformed log10 outputs with raw FeH (removed MeH and G_GAIA)
 outputs = np.hstack(log10_transformed_outputs + [np.concatenate(FeH).reshape(-1, 1)])
 
+X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=1)
+
+# Initialize scalers
+input_scaler = StandardScaler()
+output_scaler = StandardScaler()
+
+# Fit scalers on training data and transform both training and testing data
+X_train_scaled = input_scaler.fit_transform(X_train) # Fit AND transform train
+X_test_scaled = input_scaler.transform(X_test)       # ONLY transform test
+
+y_train_scaled = output_scaler.fit_transform(y_train)
+y_test_scaled = output_scaler.transform(y_test)
+
 
 # Data Module
 class GarstecDataModule(LightningDataModule):
-    def __init__(self, X_train, X_test, y_train, y_test, batch_size=2**16):
+    def __init__(self, X_train, X_test, y_train, y_test, batch_size=2**18):
         super().__init__()
         self.X_train = X_train
         self.X_test = X_test
@@ -151,25 +160,53 @@ class GarstecDataModule(LightningDataModule):
 
 # Lightning Module
 class GarstecNet(LightningModule):
-    def __init__(self, input_dim, output_dim, loss_weights, lr=1e-3):
+    def __init__(self, input_dim, output_dim, loss_weights, output_scaler, lr=1e-3):
         super().__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=['output_scaler'])
         self.lr = lr
-        self.register_buffer("loss_weights", torch.tensor(loss_weights, dtype=torch.float32))
+        self.loss_weights = torch.tensor(loss_weights, device=self.device)
+        self.output_scaler = output_scaler
 
         self.model = nn.Sequential(
-            nn.Linear(input_dim, 512), nn.ReLU(),
-            nn.Linear(512, 256), nn.ReLU(),
-            nn.Linear(256, 128), nn.ReLU(),
-            nn.Linear(128, 64), nn.ReLU(),
-            nn.Linear(64, 32), nn.ReLU(),
-            nn.Linear(32, output_dim)
+            nn.Linear(input_dim, 512),  # 1
+            nn.ReLU(),
+            nn.Linear(512, 256),  # 2
+            nn.ReLU(),
+            nn.Linear(256, 128),  # 3
+            nn.ReLU(),
+            nn.Linear(128, 64),  # 4
+            nn.ReLU(),
+            nn.Linear(64, 32),  # 5
+            nn.ReLU(),
+            nn.Linear(32, output_dim)  # Output layer
         )
         
     def custom_loss(self, y_pred, y):
-        weights = self.loss_weights.to(device=y.device, dtype=y.dtype)
-        squared_diff = torch.pow(y - y_pred, 2)
+        weights = torch.tensor(self.loss_weights, device=y_pred.device)
+
+        # Convert scalers to torch tensors for GPU compatibility
+        scaler_mean = torch.tensor(self.output_scaler.mean_, device=self.device, dtype=torch.float32)
+        scaler_scale = torch.tensor(self.output_scaler.scale_, device=self.device, dtype=torch.float32)
+        
+        # Inverse the StandardScaler transformation (in PyTorch)
+        # Formula: X_scaled = (X - mean) / std
+        # X = X_scaled * std + mean
+        y_pred_unscaled = y_pred * scaler_scale + scaler_mean
+        y_unscaled = y * scaler_scale + scaler_mean
+        
+        # Inverse the log10 transformation for the first 4 features
+        y_pred_original = y_pred_unscaled.clone()
+        y_original = y_unscaled.clone()
+        
+        # First 4 columns need 10^x transformation
+        y_pred_original[:, :4] = torch.pow(10, y_pred_unscaled[:, :4])
+        y_original[:, :4] = torch.pow(10, y_unscaled[:, :4])
+        
+        # Calculate weighted MSE in original space
+        squared_diff = torch.pow(y_pred_original - y_original, 2)
         weighted_squared_diff = squared_diff / torch.pow(weights.view(1, -1), 2)
+        
+        # Average across all dimensions
         loss = torch.mean(weighted_squared_diff)
         return loss
     
@@ -179,7 +216,6 @@ class GarstecNet(LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_pred = self(x)
-        # inverse scale and log here
         loss = self.custom_loss(y_pred, y)
         self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=False)
         return loss
@@ -189,9 +225,11 @@ class GarstecNet(LightningModule):
         y_pred = self(x)
         loss = self.custom_loss(y_pred, y)
         
+        # Calculate MSE for each output feature separately for monitoring
         mse_per_feature = torch.mean(torch.pow(y - y_pred, 2), dim=0)
         feature_names = ['teff', 'luminosity', 'dnufit', 'numax', 'feh']
         
+        # Log individual MSEs for monitoring
         for i, name in enumerate(feature_names):
             self.log(f'val_mse_{name}', mse_per_feature[i], on_epoch=True)
         
@@ -199,78 +237,67 @@ class GarstecNet(LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.SGD(self.parameters(), lr=self.lr, momentum=0, weight_decay=0)  # No momentum
-        return optimizer
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.9, patience=50, verbose=True
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_loss",
+                "interval": "epoch",
+                "frequency": 1
+            },
+        }
     
-X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=1)
-
-# Initialize scalers
-input_scaler = StandardScaler()
-output_scaler = StandardScaler()
-
-# Fit scalers on training data and transform both training and testing data
-X_train_scaled = input_scaler.fit_transform(X_train) # Fit AND transform train
-X_test_scaled = input_scaler.transform(X_test)       # ONLY transform test
-
-y_train_scaled = output_scaler.fit_transform(y_train)
-y_test_scaled = output_scaler.transform(y_test)
 
 # Define batch size and data module
-batch_size = 2**16
+batch_size = 2**18
 data_module = GarstecDataModule(X_train_scaled, X_test_scaled, y_train_scaled, y_test_scaled, batch_size=batch_size)
 
 # Define weights for [T_eff, L, dnu, numax, feh]
-# std_devs from scaler
-std_devs = output_scaler.scale_
-loss_weights = 1/std_devs
-print("Loss weights: ", loss_weights)
+loss_weights = [70.0, 0.1, 0.1, 0.5/3090, 0.01] # Divide by 3090 for correct units
 
-# Define model to prepare for loading the checkpoint
+# Define model and trainer
 input_dim = X_train.shape[1]
 output_dim = y_train.shape[1]
-
-# Load model from checkpoint - we'll run the learning rate finder on the loaded model
-model = GarstecNet.load_from_checkpoint(
-    checkpoint_path,
-    input_dim=input_dim,
-    output_dim=output_dim,
-    loss_weights=loss_weights
-)
-
-print(f"Loaded model from checkpoint: {checkpoint_path}")
-print(f"Current model learning rate: {model.lr}")
+model = GarstecNet(input_dim=input_dim, 
+                   output_dim=output_dim, 
+                   loss_weights=loss_weights, 
+                   output_scaler=output_scaler, 
+                   lr=1e-3)
 
 # Callbacks
 checkpoint_callback = ModelCheckpoint(
     monitor='val_loss',
     dirpath=save_dir,
-    filename='continued_model_v10_SP_SS-SGD---{epoch:02d}-{val_loss:.8f}',
+    filename='best_model_v11-1-SS---{epoch:02d}-{val_loss:.8f}',
     save_top_k=1,
     mode='min'
 )
 
 lr_monitor = LearningRateMonitor(logging_interval='epoch')
 
-# Create the main trainer for continued training
+# Create the main trainer with the updated model
 trainer = Trainer(
-    max_epochs=10000,  
+    max_epochs=100000,
     devices=1,
     accelerator='gpu',
     num_nodes=1,
-    callbacks=[checkpoint_callback, timer_callback],
+    callbacks=[checkpoint_callback, lr_monitor, timer_callback],
     log_every_n_steps=10,
-    precision='32-true',  
+    precision='32-true',
 )
 
 # Create a Tuner
 tuner = Tuner(trainer)
 
-# Find optimal learning rate for fine-tuning
-print("Running learning rate finder for fine-tuning...")
+# Find optimal learning rate
 lr_finder = tuner.lr_find(model, datamodule=data_module)
 
 new_lr = lr_finder.suggestion()
-print(f"Suggested Learning Rate for fine-tuning: {new_lr}")
+print(f"Suggested Learning Rate: {new_lr}")
 
 # Update the model's learning rate
 model.lr = new_lr
@@ -279,8 +306,9 @@ model.hparams.lr = new_lr
 # Configure the optimizers with the new learning rate and scheduler
 model.configure_optimizers()
 
-trainer.fit(model, data_module)
+# Start the actual training
+trainer.fit(model, datamodule=data_module)
 
-# Save the final model
+# After training completes, then save the final model
 final_checkpoint_path = checkpoint_callback.best_model_path
 print(f"Final model saved to {final_checkpoint_path}")
