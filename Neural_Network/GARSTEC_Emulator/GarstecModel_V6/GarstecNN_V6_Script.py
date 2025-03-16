@@ -1,0 +1,259 @@
+import numpy as np
+import h5py
+import random
+import os
+import sys
+import time
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import r2_score, mean_absolute_error
+
+start_time = time.time()
+max_runtime = 172800    # 2 days in seconds
+
+print("Python version:", sys.version)
+print("PyTorch version:", torch.__version__)
+print("CUDA version:", torch.version.cuda)
+print("CUDA available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("Device name:", torch.cuda.get_device_name(0))
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+print("Device: ",device)
+
+num_cores = os.cpu_count()
+print("Number of cores: ",num_cores)
+
+# Windows directory
+#garstec_data = r'C:\Users\kiena\Documents\YEAR 4\PROJECT\Data\Garstec_AS09_chiara.hdf5'
+
+
+# RDS directory
+garstec_data = r'/rds/projects/d/daviesgr-m4massloss/Garstec_AS09_chiara.hdf5'
+
+
+# 7 Inputs
+ages = []
+massini = []
+fehini = []
+alphamlt = []
+yini = []
+eta = []
+alphafe = []
+
+# 8 Outputs
+teff = []
+luminosity = []
+dnufit = []
+FeH = []
+G_GAIA = []
+massfin = []
+numax = []
+MeH = []
+
+# Open the hdf5 file (read-only mode)
+with h5py.File(garstec_data, 'r') as hdf:
+
+    grid = hdf['grid']
+    tracks = grid['tracks']
+
+    # Get a list of track names and shuffle for random sampling
+    # This is not actually necessary since we are using all the tracks, but I will leave it in anyway
+    track_names = list(tracks.keys())
+    random.seed(1)
+    random.shuffle(track_names)
+
+    # Tracks that don't have G_GAIA for some reason??
+    tracks_to_remove = ['track08278', 'track07930']
+    for track in tracks_to_remove:
+        if track in track_names:
+            track_names.remove(track)
+
+    # Choose a subset of tracks to process (or not)
+    # -----------
+
+    # num_tracks =     
+    
+    # Set the number of tracks to process
+    selected_tracks = track_names[:]
+
+    for track_name in selected_tracks:  # Iterate over the selected track names
+        track = tracks[track_name]
+        # Inputs
+        ages.append(track['age'][:])
+        massini.append(track['massini'][:])
+        fehini.append(track['FeHini'][:])
+        alphamlt.append(track['alphaMLT'][:])
+        yini.append(track['yini'][:])
+        eta.append(track['eta'][:])
+        alphafe.append(track['alphaFe'][:])
+
+        # Outputs
+        teff.append(track['Teff'][:])
+        luminosity.append(track['LPhot'][:])
+        dnufit.append(track['dnufit'][:])
+        FeH.append(track['FeH'][:])
+        G_GAIA.append(track['G_GAIA'][:])
+        massfin.append(track['massfin'][:])
+        numax.append(track['numax'][:])
+        MeH.append(track['MeH'][:])
+
+# Convert lists to numpy arrays and concatenate 
+# Define a small constant to avoid log10(0)
+epsilon = 1e-10
+
+# Features requiring log10 transformation
+log10_vars_inputs = [ages, massini, alphamlt, eta, yini]
+
+# Transform log10 variables
+log10_transformed_inputs = [np.log10(np.maximum(np.concatenate(var).reshape(-1, 1), epsilon)) for var in log10_vars_inputs]
+
+# Concatenate all inputs, including raw `fehini` and `yini`
+inputs = np.hstack(log10_transformed_inputs + [np.concatenate(fehini).reshape(-1, 1), 
+                                               np.concatenate(alphafe).reshape(-1, 1)])
+
+# Features requiring log10 transformation (strictly positive outputs)
+log10_vars_outputs = [teff, luminosity, dnufit, massfin, numax]
+
+# Transform log10 variables
+log10_transformed_outputs = [np.log10(np.maximum(np.concatenate(var).reshape(-1, 1), epsilon)) for var in log10_vars_outputs]
+
+# Combine transformed log10 outputs with raw FeH and MeH
+# FeH and MeH are not transformed, concatenated directly
+outputs = np.hstack(log10_transformed_outputs + [np.concatenate(FeH).reshape(-1, 1), 
+                                                 np.concatenate(MeH).reshape(-1, 1),
+                                                 np.concatenate(G_GAIA).reshape(-1, 1)])
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=1)
+
+scaler_X = StandardScaler()
+scaler_y = StandardScaler()
+
+X_train = scaler_X.fit_transform(X_train)
+X_test = scaler_X.transform(X_test)
+
+y_train = scaler_y.fit_transform(y_train)
+y_test = scaler_y.transform(y_test)
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(device)
+
+# Convert data to PyTorch tensors and move to gpu
+X_train_tensor = torch.tensor(X_train, dtype=torch.float32).to(device)
+X_test_tensor = torch.tensor(X_test, dtype=torch.float32).to(device)
+y_train_tensor = torch.tensor(y_train, dtype=torch.float32).to(device)
+y_test_tensor = torch.tensor(y_test, dtype=torch.float32).to(device)
+
+dataset = TensorDataset(X_train_tensor, y_train_tensor)
+dataloader = DataLoader(dataset, batch_size=2**16, shuffle=True)  
+
+# Define the neural network
+class GarstecNet(nn.Module):
+    def __init__(self):
+        super(GarstecNet, self).__init__()
+        
+        # Input layer -> First hidden layer
+        self.dense1 = nn.Linear(7, 128)  # Wider first layer
+        self.dense2 = nn.Linear(128, 128)
+        self.dense3 = nn.Linear(128, 128)
+        self.dense4 = nn.Linear(128, 64)  
+        self.dense5 = nn.Linear(64, 64)        
+        self.dense6 = nn.Linear(64, 8)  # Assuming 8 output features
+        
+    def forward(self, x):
+        x = torch.relu(self.dense1(x))
+        x = torch.relu(self.dense2(x))
+        x = torch.relu(self.dense3(x))
+        x = torch.relu(self.dense4(x))
+        x = torch.relu(self.dense5(x))
+        x = self.dense6(x)  
+        return x
+
+# Instantiate model, loss function, and optimizer
+model = GarstecNet().to(device=device)
+criterion = nn.MSELoss()
+optimizer = optim.Adam(model.parameters(), lr=0.01)
+
+epochs = 10000
+best_test_loss = float('inf')  # Initialize with infinity, so any loss will be better initially
+best_model_wts = None  # Variable to store the best model's weights
+best_epoch = -1 # Variable to store epoch of best model
+
+save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V6.2'
+os.makedirs(save_dir, exist_ok=True)  # Create directory if it doesn't exist
+
+gamma = 0.999  # Decay factor, over 5000 epochs should finish at LR ~ 10^-6
+scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
+
+for epoch in range(epochs):
+
+    # Check elapsed time
+    elapsed_time = time.time() - start_time
+
+    # Exit the loop if the runtime exceeds the maximum time limit
+    if elapsed_time >= max_runtime:
+        print(f"Maximum runtime of {max_runtime} seconds reached. Exiting training loop.")
+        break
+
+    model.train()  # Set model to training mode
+    epoch_train_loss = 0  # Accumulator for training loss
+    
+    for batch_X, batch_y in dataloader:     # Iterate over DataLoader batches
+        
+        batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+        optimizer.zero_grad()    # Clear gradients
+        predictions = model(batch_X)    # Forward pass
+
+        loss = criterion(predictions, batch_y)    # Compute loss
+        loss.backward()   # Backward pass
+        optimizer.step()     # Update weights
+        
+        epoch_train_loss += loss.item()      # Add batch loss to epoch loss
+    
+    epoch_train_loss /= len(dataloader)      # Average training loss
+    
+    # Testing phase
+    model.eval()    # Set model to evaluation mode
+    with torch.no_grad():   # Disable gradient computation for testing
+        test_predictions = model(X_test_tensor)      # Forward pass for test set
+        epoch_test_loss = criterion(test_predictions, y_test_tensor).item()     # Compute loss    
+
+    # Check if the current test loss is the best (lowest)
+    if epoch_test_loss < best_test_loss:
+        best_test_loss = epoch_test_loss
+        best_model_wts = model.state_dict()  # Save the best model's weights
+        best_epoch = epoch + 1
+
+    # Step the scheduler
+    scheduler.step()
+
+    # Print progress
+    if (epoch+1) % 250 == 0:
+        print(f"Epoch {epoch+1}/{epochs}, Train Loss: {epoch_train_loss:.4f}, Test Loss: {epoch_test_loss:.4f}, LR: {scheduler.get_last_lr()[0]:.6f}")
+
+# Training complete
+# Save the overall best model at the end of the training loop (after all epochs)
+if best_model_wts is not None:
+    # Save the best model's weights and optimizer state at the end of training
+    torch.save({
+        'epoch': epochs,  
+        'model_state_dict': best_model_wts,
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict(),
+        'loss': best_test_loss,
+    }, os.path.join(save_dir, 'best_model_v6_3.pth'))  # Save model checkpoint
+
+    print(f"Best model saved to {os.path.join(save_dir, 'best_model_v6_3.pth')}, epoch: {best_epoch}, test loss: {best_test_loss}")
+
+total_time = time.time() - start_time
+
+print(f"Script completed in {int(total_time)} seconds.")
+
