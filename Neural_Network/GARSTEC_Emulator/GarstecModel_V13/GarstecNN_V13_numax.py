@@ -13,11 +13,7 @@ from pytorch_lightning import LightningModule, LightningDataModule, Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, Timer
 from pytorch_lightning.tuner.tuning import Tuner
 
-
-# For double precision to work do not set default as float64 (pytorch 2.3 or previous!)
-# All tensors have to be set as float64 manually
-
-timer_callback = Timer(duration="00:48:00:00")  # dd:hh:mm:ss
+timer_callback = Timer(duration="00:24:00:00")  # dd:hh:mm:ss
 
 # Print Python, PyTorch, and CUDA version information
 print("Python version:", sys.version)
@@ -47,7 +43,7 @@ print("Number of cores: ", num_cores)
 
 # RDS directory
 garstec_data = r'/rds/projects/d/daviesgr-m4massloss/Garstec_AS09_chiara.hdf5'
-save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V11'
+save_dir = r'/rds/projects/d/daviesgr-m4massloss/GarstecNN_V13'
 os.makedirs(save_dir, exist_ok=True)
 
 # 7 Inputs
@@ -59,12 +55,9 @@ yini = []
 eta = []
 alphafe = []
 
-# 5 Outputs
-teff = []
-luminosity = []
-dnufit = []
-FeH = []
+# numax output
 numax = []
+
 
 # Open the hdf5 file (read-only mode)
 with h5py.File(garstec_data, 'r') as hdf:
@@ -91,10 +84,6 @@ with h5py.File(garstec_data, 'r') as hdf:
         alphafe.append(track['alphaFe'][:])
 
         # Outputs
-        teff.append(track['Teff'][:])
-        luminosity.append(track['LPhot'][:])
-        dnufit.append(track['dnufit'][:])
-        FeH.append(track['FeH'][:])
         numax.append(track['numax'][:])
 
 # Convert lists to numpy arrays and concatenate directly (no log transformation)
@@ -113,11 +102,7 @@ inputs = np.hstack(input_arrays)
 
 # Concatenate all outputs
 output_arrays = [
-    np.concatenate(teff).reshape(-1, 1),
-    np.concatenate(luminosity).reshape(-1, 1),
-    np.concatenate(dnufit).reshape(-1, 1),
     np.concatenate(numax).reshape(-1, 1),
-    np.concatenate(FeH).reshape(-1, 1)
 ]
 
 # Combine outputs
@@ -138,7 +123,7 @@ y_test_scaled = output_scaler.transform(y_test)
 
 # Data Module
 class GarstecDataModule(LightningDataModule):
-    def __init__(self, X_train, X_test, y_train, y_test, batch_size=2**20):
+    def __init__(self, X_train, X_test, y_train, y_test, batch_size=2**18):
         super().__init__()
         self.X_train = X_train
         self.X_test = X_test
@@ -149,84 +134,57 @@ class GarstecDataModule(LightningDataModule):
 
     def train_dataloader(self):
         train_dataset = TensorDataset(
-            torch.tensor(self.X_train, dtype=torch.float64),
-            torch.tensor(self.y_train, dtype=torch.float64)
+            torch.tensor(self.X_train, dtype=torch.float32),
+            torch.tensor(self.y_train, dtype=torch.float32)
         )
         return DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, pin_memory=True, persistent_workers=True, prefetch_factor=2)
 
     def val_dataloader(self):
         val_dataset = TensorDataset(
-            torch.tensor(self.X_test, dtype=torch.float64),
-            torch.tensor(self.y_test, dtype=torch.float64)
+            torch.tensor(self.X_test, dtype=torch.float32),
+            torch.tensor(self.y_test, dtype=torch.float32)
         )
         return DataLoader(val_dataset, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, persistent_workers=True, prefetch_factor=2)
 
-# Lightning Module
+# Lightning module
 class GarstecNet(LightningModule):
-    def __init__(self, input_dim, output_dim, loss_weights, lr=1e-3, 
-                 output_scaler_mean=None, output_scaler_scale=None):
+    def __init__(self, input_dim, output_dim, lr=1e-3):
         super().__init__()
         self.save_hyperparameters()
         self.lr = lr
-        self.loss_weights = torch.tensor(loss_weights, dtype=torch.float64)
         
-        # Store scaler parameters as tensors
-        self.register_buffer('output_mean', torch.tensor(output_scaler_mean, dtype=torch.float64))
-        self.register_buffer('output_scale', torch.tensor(output_scaler_scale, dtype=torch.float64))
-
         self.model = nn.Sequential(
-            nn.Linear(input_dim, 512),
+            nn.Linear(input_dim, 128),
             nn.LeakyReLU(),
-            nn.Linear(512, 256),
-            nn.LeakyReLU(),
-            nn.Linear(256, 128),
+            nn.Linear(128, 128),
             nn.LeakyReLU(),
             nn.Linear(128, 64),
             nn.LeakyReLU(),
-            nn.Linear(64, 32),
+            nn.Linear(64, 64),
             nn.LeakyReLU(),
-            nn.Linear(32, output_dim)
+            nn.Linear(64, output_dim)
         )
-    
-    def inverse_transform(self, scaled_tensor):
-        """PyTorch implementation of inverse_transform from scikit-learn's StandardScaler"""
-        return scaled_tensor * self.output_scale + self.output_mean
-    
-    def custom_loss(self, y_pred, y_true):
         
-        weights = self.loss_weights.to(device=y_pred.device, dtype=y_pred.dtype)
-        # Both y_pred and y_true are scaled tensors
-        
-        # Inverse transform predictions to get original scale
-        y_pred_original = self.inverse_transform(y_pred)
-        y_true_original = self.inverse_transform(y_true)
-        
-        # Calculate weighted MSE loss directly (no log conversion needed)
-        squared_diff = torch.pow(y_true_original - y_pred_original, 2)
-        weighted_squared_diff = squared_diff / torch.pow(weights.view(1, -1), 2)
-        
-        # Average across all dimensions (both batch and features)
-        loss = torch.mean(weighted_squared_diff)
-        return loss
-    
+        self.loss_fn = nn.MSELoss()
+
     def forward(self, x):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_pred = self(x)
-        loss = self.custom_loss(y_pred, y)
+        loss = self.loss_fn(y_pred, y)
         self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=False)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_pred = self(x)
-        loss = self.custom_loss(y_pred, y)
+        loss = self.loss_fn(y_pred, y)
         
         # Calculate MSE for each output feature separately for monitoring
         mse_per_feature = torch.mean(torch.pow(y - y_pred, 2), dim=0)
-        feature_names = ['teff', 'luminosity', 'dnufit', 'numax', 'feh']
+        feature_names = ['numax']
         
         # Log individual MSEs for monitoring
         for i, name in enumerate(feature_names):
@@ -252,34 +210,23 @@ class GarstecNet(LightningModule):
     
 
 # Define batch size and data module
-batch_size = 2**20
+batch_size = 2**18
 data_module = GarstecDataModule(X_train_scaled, X_test_scaled, y_train_scaled, y_test_scaled, batch_size=batch_size)
-
-# Define weights for [T_eff, L, dnu, numax, feh]
-loss_weights = [70, 0.1, 0.1, 0.5/3090, 0.01]  # Division by 3090
-print("Loss weights: ", loss_weights)
-
-# Store the scaler parameters
-output_scaler_mean = output_scaler.mean_
-output_scaler_scale = output_scaler.scale_
 
 # Define model and trainer
 input_dim = X_train.shape[1]
 output_dim = y_train.shape[1]
 model = GarstecNet(
     input_dim=input_dim, 
-    output_dim=output_dim, 
-    loss_weights=[float(w) for w in loss_weights], 
-    lr=1e-3,
-    output_scaler_mean=output_scaler_mean,
-    output_scaler_scale=output_scaler_scale
+    output_dim=output_dim,  
+    lr=1e-3
 )
 
 # Callbacks
 checkpoint_callback = ModelCheckpoint(
     monitor='val_loss',
     dirpath=save_dir,
-    filename='best_model_noLogDP-2_v11---{epoch:02d}-{val_loss:.8f}',
+    filename='best_model_v13_numax---{epoch:02d}-{val_loss:.8f}',
     save_top_k=1,
     mode='min'
 )
@@ -294,7 +241,7 @@ trainer = Trainer(
     num_nodes=1,
     callbacks=[checkpoint_callback, lr_monitor, timer_callback],
     log_every_n_steps=10,
-    precision="64-true",  
+    precision="32-true",  
 )
 
 # Create a Tuner
